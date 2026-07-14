@@ -1,0 +1,496 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>圖書條碼多功能作業站 Pro</title>
+    <style>
+        :root { 
+            --primary: #2c3e50; 
+            --success: #27ae60; 
+            --danger: #e74c3c; 
+            --warn: #f39c12; 
+            --info: #2980b9; 
+            --procurement: #8e44ad;
+        }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f7f6; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        .card { background: white; width: 100%; max-width: 600px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); box-sizing: border-box; margin-bottom: 15px; }
+        h2 { color: var(--primary); margin-top: 0; font-size: 1.4rem; text-align: center; }
+        h3 { color: var(--primary); margin: 10px 0; font-size: 1.1rem; }
+        
+        /* 模式切換器 */
+        .mode-selector { display: flex; background: #eee; border-radius: 8px; padding: 4px; margin-bottom: 15px; }
+        .mode-btn { flex: 1; padding: 10px; border: none; background: transparent; font-weight: bold; cursor: pointer; border-radius: 6px; transition: 0.3s; font-size: 0.95rem; }
+        .mode-btn.active { background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        .mode-btn.active.reserve-mode { color: var(--warn); }
+        .mode-btn.active.procure-mode { color: var(--procurement); }
+
+        textarea { width: 100%; height: 120px; padding: 10px; border: 2px solid #ddd; border-radius: 8px; box-sizing: border-box; resize: vertical; font-family: monospace; font-size: 13px; transition: 0.3s; }
+        textarea:disabled { background: #e9ecef; color: #6c757d; border-color: #ced4da; cursor: not-allowed; }
+        input { width: 100%; padding: 15px; font-size: 20px; text-align: center; border: 2px solid #ddd; border-radius: 8px; margin: 15px 0; box-sizing: border-box; transition: 0.3s; }
+        input:focus { border-color: #3498db; outline: none; background: #fffde7; box-shadow: 0 0 8px rgba(52,152,219,0.3); }
+        
+        #status { font-weight: bold; padding: 12px; border-radius: 6px; margin-bottom: 15px; min-height: 24px; transition: 0.3s; text-align: center; font-size: 1.1rem; }
+        .valid { background: #d4edda; color: #155724; }
+        .invalid { background: #f8d7da; color: #721c24; }
+        .intercept { background: #fff3cd; color: #856404; border: 2px dashed var(--warn); animation: flash 0.5s infinite alternate; }
+        .procure-valid { background: #ebf5fb; color: #1b4f72; border: 2px dashed var(--info); }
+        @keyframes flash { from { opacity: 1; } to { opacity: 0.7; } }
+        
+        .btn-group { display: flex; gap: 10px; margin-bottom: 20px; }
+        button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; font-size: 14px; }
+        .btn-download { background: #2980b9; }
+        .btn-clear { background: #95a5a6; }
+        .btn-lock { background: #34495e; padding: 6px 12px; font-size: 12px; flex: none; }
+        .btn-unlock { background: #7f8c8d; padding: 6px 12px; font-size: 12px; flex: none; }
+        button:active { opacity: 0.8; }
+        
+        #stats { display: flex; justify-content: space-between; font-size: 0.95rem; color: #444; margin-bottom: 10px; background: #f8f9fa; padding: 8px; border-radius: 6px; }
+        #log { width: 100%; max-width: 600px; background: white; border-radius: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: 250px; overflow-y: auto; box-sizing: border-box; }
+        .log-item { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; }
+        .log-item:first-child { background: #f8f9fa; font-weight: bold; border-left: 4px solid var(--success); }
+        .log-item.intercept-item { background: #fff3cd; border-left: 4px solid var(--warn); font-weight: bold; }
+        .log-item.procure-item { background: #ebf5fb; border-left: 4px solid var(--info); }
+
+        /* 未到貨清單區 */
+        .undelivered-section { display: none; margin-top: 15px; }
+        .undelivered-list { max-height: 150px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; font-size: 12px; background: #fafafa; font-family: monospace; }
+        .undelivered-item { padding: 4px 0; border-bottom: 1px dashed #eee; color: #c0392b; display: flex; justify-content: space-between; }
+    </style>
+</head>
+<body>
+
+<div class="card">
+    <h2>📚 圖書條碼多功能作業站</h2>
+    
+    <!-- 模式切換 -->
+    <div class="mode-selector">
+        <button id="modeReserveBtn" class="mode-btn active reserve-mode" onclick="switchMode('reserve')">⚠️ 預約書攔截模式</button>
+        <button id="modeProcureBtn" class="mode-btn procure-mode" onclick="switchMode('procure')">📦 採購書籍驗收模式</button>
+    </div>
+    
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+        <h3 id="listTitle">⚠️ 預約書條碼清單（一行一個）</h3>
+        <div>
+            <button id="lockBtn" class="btn-lock" onclick="toggleLock(true)">🔒 鎖定書單</button>
+            <button id="unlockBtn" class="btn-unlock" onclick="toggleLock(false)" style="display:none;">🔓 解除鎖定</button>
+        </div>
+    </div>
+    
+    <textarea id="reserveInput" placeholder="例如：&#10;NH0012345&#10;PNH12345" onchange="saveReserveList()"></textarea>
+    <div id="reserveCount" style="font-size: 0.85rem; color: #7f8c8d; margin-top: 5px;">目前載入資料：0 筆</div>
+</div>
+
+<div class="card">
+    <div id="stats">
+        <span>已掃描數量：<b id="count">0</b> 筆</span>
+        <span id="procureStats" style="display: none;">未到貨：<b id="undeliveredCount" style="color:var(--danger);">0</b> 筆</span>
+    </div>
+    
+    <input type="text" id="barcodeInput" placeholder="請掃描條碼..." autofocus>
+    <div id="status">準備就緒（請先在網頁任意處點一下滑鼠以啟用音效與語音功能）</div>
+
+    <div class="btn-group">
+        <button class="btn-download" onclick="exportFile('csv')">💾 下載 CSV 紀錄</button>
+        <button class="btn-download" style="background: #27ae60;" onclick="exportFile('txt')">📄 下載 TXT（純條碼）</button>
+        <button class="btn-clear" onclick="clearData()">🗑️ 清空歷史紀錄</button>
+    </div>
+
+    <!-- 採購模式專屬：未到貨清單展示 -->
+    <div id="undeliveredSection" class="undelivered-section">
+        <h4 style="margin: 5px 0; color: var(--danger); font-size: 0.9rem;">⏳ 尚未到貨清單</h4>
+        <div id="undeliveredList" class="undelivered-list"></div>
+    </div>
+</div>
+
+<h4 style="margin: 10px 0 5px 0; color: #7f8c8d;">近期掃描紀錄</h4>
+<div id="log"></div>
+
+<script>
+    const input = document.getElementById('barcodeInput');
+    const status = document.getElementById('status');
+    const logContainer = document.getElementById('log');
+    const countEl = document.getElementById('count');
+    const reserveInput = document.getElementById('reserveInput');
+    const reserveCountEl = document.getElementById('reserveCount');
+    const lockBtn = document.getElementById('lockBtn');
+    const unlockBtn = document.getElementById('unlockBtn');
+    
+    const listTitle = document.getElementById('listTitle');
+    const procureStats = document.getElementById('procureStats');
+    const undeliveredCountEl = document.getElementById('undeliveredCount');
+    const undeliveredSection = document.getElementById('undeliveredSection');
+    const undeliveredListEl = document.getElementById('undeliveredList');
+
+    // 狀態變數
+    let currentMode = localStorage.getItem('work_mode') || 'reserve'; // reserve 或 procure
+    let savedData = JSON.parse(localStorage.getItem('book_barcodes')) || [];
+    
+    // 預約與採購清單數據結構
+    // reserveSet: 預約模式使用
+    let reserveSet = new Set();
+    // procureMap: 採購模式使用，對應 { 條碼: 書名 }
+    let procureMap = new Map();
+
+    // 載入預設輸入內容
+    reserveInput.value = localStorage.getItem('reserve_barcodes_raw') || '';
+    
+    // 點擊網頁啟用聲音與語音
+    document.addEventListener('click', (e) => {
+        unlockAudioContext();
+        if (e.target === reserveInput && !reserveInput.disabled) return;
+        input.focus();
+    });
+
+    // 初始化鎖定狀態
+    const isLocked = localStorage.getItem('reserve_is_locked') === 'true';
+    toggleLock(isLocked);
+    
+    // 初始化模式與解析
+    switchMode(currentMode, false);
+    renderLog();
+
+    function unlockAudioContext() {
+        try {
+            const windowAudioContext = window.AudioContext || window.webkitAudioContext;
+            if (windowAudioContext) {
+                const tempCtx = new windowAudioContext();
+                if (tempCtx.state === 'suspended') {
+                    tempCtx.resume();
+                }
+            }
+            window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
+        } catch (e) {
+            console.log("語音通道激活失敗:", e);
+        }
+    }
+
+    // 模式切換邏輯
+    function switchMode(mode, shouldFocus = true) {
+        currentMode = mode;
+        localStorage.setItem('work_mode', mode);
+
+        const btnReserve = document.getElementById('modeReserveBtn');
+        const btnProcure = document.getElementById('modeProcureBtn');
+
+        if (mode === 'reserve') {
+            btnReserve.classList.add('active');
+            btnProcure.classList.remove('active');
+            listTitle.innerText = "⚠️ 預約書條碼清單（一行一個）";
+            reserveInput.placeholder = "例如：\nNH0012345\nPNH12345";
+            procureStats.style.display = 'none';
+            undeliveredSection.style.display = 'none';
+        } else {
+            btnReserve.classList.remove('active');
+            btnProcure.classList.add('active');
+            listTitle.innerText = "📦 採購應到貨清單（條碼 + Tab/逗號/空格 + 書名）";
+            reserveInput.placeholder = "可以直接從 Excel 複製貼上：\nNH0012345\t傲慢與偏見\nPNH12345,哈利波特";
+            procureStats.style.display = 'inline';
+            undeliveredSection.style.display = 'block';
+        }
+
+        updateDataStructure();
+        if (shouldFocus) input.focus();
+    }
+
+    function toggleLock(shouldLock) {
+        reserveInput.disabled = shouldLock;
+        localStorage.setItem('reserve_is_locked', shouldLock);
+        if (shouldLock) {
+            lockBtn.style.display = 'none';
+            unlockBtn.style.display = 'inline-block';
+            input.focus();
+        } else {
+            lockBtn.style.display = 'inline-block';
+            unlockBtn.style.display = 'none';
+        }
+    }
+
+    function saveReserveList() {
+        localStorage.setItem('reserve_barcodes_raw', reserveInput.value);
+        updateDataStructure();
+    }
+
+    // 解析文字框輸入內容，支援預約模式（純條碼）與採購模式（條碼對應書名）
+    function updateDataStructure() {
+        const lines = reserveInput.value.split('\n');
+        reserveSet.clear();
+        procureMap.clear();
+
+        lines.forEach(line => {
+            const rawLine = line.trim();
+            if (!rawLine) return;
+
+            // 支援多種分隔符號（Tab、逗號、分號、空格）
+            const parts = rawLine.split(/[\t,;，；\s]+/);
+            const barcode = parts[0].trim().toUpperCase();
+            
+            // 如果有第二個欄位，就是書名；沒有則預設為「未定義書名」
+            const bookName = parts.slice(1).join(' ').trim() || "未命名圖書";
+
+            if (barcode) {
+                reserveSet.add(barcode);
+                procureMap.set(barcode, bookName);
+            }
+        });
+
+        if (currentMode === 'reserve') {
+            reserveCountEl.innerText = `目前載入預約條碼：${reserveSet.size} 筆`;
+        } else {
+            reserveCountEl.innerText = `目前載入採購清單：${procureMap.size} 筆`;
+            updateUndeliveredList();
+        }
+    }
+
+    // 更新未到貨清單
+    function updateUndeliveredList() {
+        if (currentMode !== 'procure') return;
+
+        // 找出哪些在 procureMap 但不在 savedData 中
+        const scannedBarcodes = new Set(savedData.map(item => item.barcode));
+        const undelivered = [];
+
+        procureMap.forEach((bookName, barcode) => {
+            if (!scannedBarcodes.has(barcode)) {
+                undelivered.push({ barcode, bookName });
+            }
+        });
+
+        undeliveredCountEl.innerText = undelivered.length;
+        undeliveredListEl.innerHTML = undelivered.map(item => `
+            <div class="undelivered-item">
+                <span>📌 ${item.barcode}</span>
+                <span style="color: #555;">${item.bookName}</span>
+            </div>
+        `).join('') || `<div style="color:var(--success); text-align:center; padding:10px; font-weight:bold;">🎉 全數到齊！沒有未到貨書籍！</div>`;
+    }
+
+    input.addEventListener('keypress', (e) => {
+        if (e.key === 'Enter') {
+            unlockAudioContext(); 
+            const val = input.value.trim().toUpperCase();
+            if (val) {
+                validateBarcode(val);
+                input.value = '';
+            }
+        }
+    });
+
+    function validateBarcode(code) {
+        const startWithNH = code.startsWith("NH");
+        const startWithPNH = code.startsWith("PNH");
+
+        if (!startWithNH && !startWithPNH) {
+            showStatus(`❌ 格式錯誤 (非本館條碼開頭): ${code}`, "invalid");
+            playAlertSound('error');
+            return;
+        }
+
+        const isFormat1 = /^[A-Z]{2}\d{7}$/.test(code); 
+        const isFormat2 = /^[A-Z]{3}\d{5}$/.test(code); 
+
+        if (isFormat1 || isFormat2) {
+            // 檢查是否重複掃描
+            if (savedData.some(item => item.barcode === code)) {
+                showStatus(`⚠️ 此條碼已掃描過: ${code}`, "invalid");
+                playAlertSound('duplicate');
+                return;
+            }
+
+            if (currentMode === 'reserve') {
+                // =============== 預約攔截模式 ===============
+                const isReserved = reserveSet.has(code);
+                const newEntry = {
+                    barcode: code,
+                    time: new Date().toLocaleString(),
+                    isReserved: isReserved,
+                    mode: 'reserve'
+                };
+                savedData.unshift(newEntry);
+                localStorage.setItem('book_barcodes', JSON.stringify(savedData));
+                
+                if (isReserved) {
+                    showStatus("🚨 攔截成功！此書有預約！: " + code, "intercept");
+                    playAlertSound('intercept');
+                } else {
+                    showStatus("✅ 掃描成功: " + code, "valid");
+                    playAlertSound('success');
+                }
+            } else {
+                // =============== 採購驗收模式 ===============
+                const isInList = procureMap.has(code);
+                const bookName = isInList ? procureMap.get(code) : "不在到貨清單內";
+                
+                const newEntry = {
+                    barcode: code,
+                    bookName: bookName,
+                    time: new Date().toLocaleString(),
+                    isReserved: false, // 採購模式下不使用此屬性
+                    isInList: isInList,
+                    mode: 'procure'
+                };
+                savedData.unshift(newEntry);
+                localStorage.setItem('book_barcodes', JSON.stringify(savedData));
+
+                if (isInList) {
+                    showStatus(`📦 到貨核對正確！\n書名：《${bookName}》`, "procure-valid");
+                    // 傳入書名讓語音唸出
+                    playAlertSound('procure-success', bookName);
+                } else {
+                    showStatus(`❌ 異常！此書不在到貨清單內: ${code}`, "invalid");
+                    playAlertSound('not-in-list');
+                }
+                updateUndeliveredList();
+            }
+            
+            renderLog();
+        } else {
+            showStatus(`❌ 格式錯誤 (長度不符): ${code}`, "invalid");
+            playAlertSound('error');
+        }
+    }
+
+    function renderLog() {
+        countEl.innerText = savedData.length;
+        
+        logContainer.innerHTML = savedData.map(item => {
+            if (item.mode === 'procure') {
+                const matchClass = item.isInList ? 'procure-item' : 'invalid';
+                return `
+                    <div class="log-item ${matchClass}">
+                        <span>${item.barcode} 📖 ${item.bookName}</span>
+                        <span style="color: #999; font-size: 0.8em;">${item.time}</span>
+                    </div>
+                `;
+            } else {
+                return `
+                    <div class="log-item ${item.isReserved ? 'intercept-item' : ''}">
+                        <span>${item.barcode} ${item.isReserved ? ' [⚠️有預約]' : ''}</span>
+                        <span style="color: #999; font-size: 0.8em;">${item.time}</span>
+                    </div>
+                `;
+            }
+        }).join('');
+    }
+
+    function showStatus(text, className) {
+        status.innerText = text;
+        status.className = className;
+    }
+
+    function playAlertSound(type, textExtra = "") {
+        // 先強制停止正在說話的語音，實現「刷下一本直接中斷」的效果
+        window.speechSynthesis.cancel();
+
+        // 逼逼短音發聲（基礎 Web Audio API）
+        const playBeep = (freq = 1000, duration = 0.08) => {
+            try {
+                const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                const osc = audioCtx.createOscillator();
+                const g = audioCtx.createGain();
+                osc.connect(g); 
+                g.connect(audioCtx.destination);
+                osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+                g.gain.setValueAtTime(0.08, audioCtx.currentTime);
+                osc.start(); 
+                osc.stop(audioCtx.currentTime + duration);
+            } catch (e) {
+                console.log("逼聲播不出來:", e);
+            }
+        };
+
+        // 1. 一般掃描成功（預約模式下沒預約的書）
+        if (type === 'success') {
+            playBeep(1000, 0.08);
+            return;
+        }
+
+        // 2. 採購驗收成功：先發出清脆小短音，接著「馬上唸書名」
+        if (type === 'procure-success') {
+            playBeep(1200, 0.05); // 稍微高音一點點的嗶聲，表示正確
+            setTimeout(() => {
+                speakText(textExtra);
+            }, 80);
+            return;
+        }
+
+        // 其餘狀況（警報、重複、錯誤）皆以「人聲語音」來主導提示
+        let speakWords = "";
+        if (type === 'intercept') {
+            speakWords = "攔截";
+        } else if (type === 'duplicate') {
+            speakWords = "條碼重複";
+        } else if (type === 'error') {
+            speakWords = "格式錯誤";
+        } else if (type === 'not-in-list') {
+            speakWords = "不在清單內";
+        } else {
+            speakWords = "注意錯誤";
+        }
+
+        speakText(speakWords);
+    }
+
+    // 呼叫語音合成唸出文字
+    function speakText(text) {
+        const msg = new SpeechSynthesisUtterance(text);
+        msg.lang = 'zh-TW';
+        msg.rate = 1.35; // 語速稍微加快，讓清點流暢
+        
+        window.speechSynthesis.speak(msg);
+        
+        // 針對 Chrome 語音有時會被自動暫停的 Bug 進行修復
+        if (window.speechSynthesis.paused) {
+            window.speechSynthesis.resume();
+        }
+    }
+
+    function exportFile(format) {
+        if (savedData.length === 0) {
+            alert("目前沒有資料可匯出！");
+            return;
+        }
+        let fileContent = "";
+        let fileName = `${currentMode === 'reserve' ? '預約攔截' : '採購清點'}_export_${new Date().toISOString().slice(0,10)}`;
+        
+        if (format === 'csv') {
+            if (currentMode === 'reserve') {
+                fileContent = "\uFEFF條碼,掃描時間,是否有預約\n"; 
+                savedData.forEach(item => { 
+                    fileContent += `${item.barcode},${item.time},${item.isReserved ? '是' : '否'}\n`; 
+                });
+            } else {
+                fileContent = "\uFEFF條碼,書名,掃描時間,是否在到貨清單\n"; 
+                savedData.forEach(item => { 
+                    fileContent += `${item.barcode},"${item.bookName.replace(/"/g, '""')}",${item.time},${item.isInList ? '是' : '否'}\n`; 
+                });
+            }
+            fileName += ".csv";
+        } else if (format === 'txt') {
+            savedData.forEach(item => { fileContent += `${item.barcode}\n`; });
+            fileName += ".txt";
+        }
+        
+        const blob = new Blob([fileContent], { type: 'text/plain;charset=utf-8;' });
+        const url = URL.createObjectURL(blob);
+        const link = document.createElement("a");
+        link.setAttribute("href", url);
+        link.setAttribute("download", fileName);
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+    }
+
+    function clearData() {
+        if (confirm("確定要清空所有已掃描的資料嗎？(此動作無法復原，但上方的對照清單會保留)")) {
+            savedData = [];
+            localStorage.removeItem('book_barcodes');
+            renderLog();
+            if (currentMode === 'procure') updateUndeliveredList();
+            showStatus("已清空所有紀錄", "");
+        }
+    }
+</script>
+
+</body>
+</html>
