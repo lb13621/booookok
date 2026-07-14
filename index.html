@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>圖書條碼多功能作業站 Pro (安全網頁版)</title>
+    <title>圖書條碼多功能作業站 Pro (精準解析版)</title>
     <style>
         :root { 
             --primary: #2c3e50; 
@@ -16,13 +16,11 @@
         }
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
         
-        /* 預設隱藏主畫面，密碼正確才顯示 */
         #mainApp { display: none; width: 100%; max-width: 600px; }
         .card { background: white; width: 100%; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); box-sizing: border-box; margin-bottom: 15px; }
         h2 { color: var(--primary); margin-top: 0; font-size: 1.4rem; text-align: center; }
         h3 { color: var(--primary); margin: 10px 0; font-size: 1.1rem; }
         
-        /* 模式切換器 */
         .mode-selector { display: flex; background: #eee; border-radius: 8px; padding: 4px; margin-bottom: 15px; }
         .mode-btn { flex: 1; padding: 10px; border: none; background: transparent; font-weight: bold; cursor: pointer; border-radius: 6px; transition: 0.3s; font-size: 0.95rem; }
         .mode-btn.active { background: white; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -64,15 +62,12 @@
 </head>
 <body>
 
-<!-- 鎖定狀態下的空白偽裝 -->
-<div id="lockScreen" style="margin-top: 100px; color: #95a5a6; font-size: 0.9rem;">系統維護中...</div>
+<div id="lockScreen" style="text-align: center; margin-top: 100px; color: #95a5a6; font-size: 0.9rem;">系統維護中...</div>
 
-<!-- 主程式畫面 -->
 <div id="mainApp">
     <div class="card">
         <h2>📚 圖書條碼多功能作業站</h2>
         
-        <!-- 模式切換 -->
         <div class="mode-selector">
             <button id="modeReserveBtn" class="mode-btn active reserve-mode" onclick="switchMode('reserve')">⚠️ 預約書攔截模式</button>
             <button id="modeProcureBtn" class="mode-btn procure-mode" onclick="switchMode('procure')">📦 採購書籍驗收模式</button>
@@ -105,7 +100,6 @@
             <button class="btn-clear" onclick="clearData()">🗑️ 清空歷史紀錄</button>
         </div>
 
-        <!-- 採購模式專屬：未到貨清單展示 -->
         <div id="undeliveredSection" class="undelivered-section">
             <h4 style="margin: 5px 0; color: var(--danger); font-size: 0.9rem;">⏳ 尚未到貨清單</h4>
             <div id="undeliveredList" class="undelivered-list"></div>
@@ -117,9 +111,8 @@
 </div>
 
 <script>
-    // 🔒 隱形斗篷安全檢查
-    // 💡 密碼可以在下面這行修改，目前預設為 '1247'
-    const systemPassword = '1247'; 
+    // 🔒 隱形斗篷密碼鎖（可以在這行改密碼，引號請保留）
+    const systemPassword = '1234'; 
     
     function checkAccess() {
         const pass = prompt("請輸入系統驗收驗證碼：");
@@ -148,14 +141,12 @@
     const undeliveredSection = document.getElementById('undeliveredSection');
     const undeliveredListEl = document.getElementById('undeliveredList');
 
-    // 狀態變數
     let currentMode = localStorage.getItem('work_mode') || 'reserve'; 
     let savedData = [];
     
     let reserveSet = new Set();
     let procureMap = new Map();
 
-    // 點擊網頁啟用聲音與語音
     document.addEventListener('click', (e) => {
         unlockAudioContext();
         if (document.getElementById('mainApp').style.display === 'block') {
@@ -169,15 +160,12 @@
             const windowAudioContext = window.AudioContext || window.webkitAudioContext;
             if (windowAudioContext) {
                 const tempCtx = new windowAudioContext();
-                if (tempCtx.state === 'suspended') {
-                    tempCtx.resume();
-                }
+                if (tempCtx.state === 'suspended') tempCtx.resume();
             }
             window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
         } catch (e) {}
     }
 
-    // 模式切換邏輯
     function switchMode(mode, shouldFocus = true) {
         currentMode = mode;
         localStorage.setItem('work_mode', mode);
@@ -223,6 +211,7 @@
         updateDataStructure();
     }
 
+    // 🔥 升級版精準解析：自動偵測並拆分條碼與書名，徹底保留重複書名
     function updateDataStructure() {
         const lines = reserveInput.value.split('\n');
         reserveSet.clear();
@@ -232,13 +221,27 @@
             const rawLine = line.trim();
             if (!rawLine) return;
 
-            const parts = rawLine.split(/[\t,;，；\s]+/);
-            const barcode = parts[0].trim().toUpperCase();
-            const bookName = parts.slice(1).join(' ').trim() || "未命名圖書";
+            // 尋找條碼 (NH 開頭或 PNH 開頭，不限大小寫)
+            const barcodeRegex = /\b(NH\d+|PNH\d+)\b/i;
+            const match = rawLine.match(barcodeRegex);
 
-            if (barcode) {
+            if (match) {
+                const barcode = match[1].toUpperCase();
+                // 把條碼從該行文字中拔掉，剩下的部分就是書名（自動清理多餘空白、Tab、逗號、分號）
+                let bookName = rawLine.replace(match[0], '').replace(/^[\t,;，；\s]+|[\t,;，；\s]+$/g, '').trim();
+                bookName = bookName || "未命名圖書";
+
                 reserveSet.add(barcode);
                 procureMap.set(barcode, bookName);
+            } else {
+                // 如果沒有偵測到 NH/PNH 格式，則退回預設的第一欄為條碼
+                const parts = rawLine.split(/[\t,;，；]+/);
+                const barcode = parts[0].trim().toUpperCase();
+                const bookName = parts.slice(1).join(' ').trim() || "未命名圖書";
+                if (barcode) {
+                    reserveSet.add(barcode);
+                    procureMap.set(barcode, bookName);
+                }
             }
         });
 
@@ -395,7 +398,7 @@
                 osc.start(); 
                 osc.stop(audioCtx.currentTime + duration);
             } catch (e) {
-                console.log("逼聲播不出來:", e);
+                console.log("嗶聲播放失敗:", e);
             }
         };
 
@@ -486,12 +489,8 @@
         }
     }
 
-    // 啟動主流程
     function startApp() {
-        // 載入預設輸入內容
         reserveInput.value = localStorage.getItem('reserve_barcodes_raw') || '';
-        
-        // 讀取快取模式與歷史紀錄
         currentMode = localStorage.getItem('work_mode') || 'reserve'; 
         savedData = JSON.parse(localStorage.getItem('book_barcodes')) || [];
         
@@ -502,7 +501,6 @@
         renderLog();
     }
 
-    // 網頁開啟時，先執行安全檢查
     window.onload = checkAccess;
 </script>
 
