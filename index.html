@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>圖書條碼多功能作業站 Pro</title>
+    <title>圖書條碼多功能作業站 Pro (安全網頁版)</title>
     <style>
         :root { 
             --primary: #2c3e50; 
@@ -12,9 +12,13 @@
             --warn: #f39c12; 
             --info: #2980b9; 
             --procurement: #8e44ad;
+            --bg-color: #f4f7f6;
         }
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #f4f7f6; margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
-        .card { background: white; width: 100%; max-width: 600px; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); box-sizing: border-box; margin-bottom: 15px; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: var(--bg-color); margin: 0; padding: 15px; display: flex; flex-direction: column; align-items: center; }
+        
+        /* 預設隱藏主畫面，密碼正確才顯示 */
+        #mainApp { display: none; width: 100%; max-width: 600px; }
+        .card { background: white; width: 100%; padding: 20px; border-radius: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1); box-sizing: border-box; margin-bottom: 15px; }
         h2 { color: var(--primary); margin-top: 0; font-size: 1.4rem; text-align: center; }
         h3 { color: var(--primary); margin: 10px 0; font-size: 1.1rem; }
         
@@ -46,7 +50,7 @@
         button:active { opacity: 0.8; }
         
         #stats { display: flex; justify-content: space-between; font-size: 0.95rem; color: #444; margin-bottom: 10px; background: #f8f9fa; padding: 8px; border-radius: 6px; }
-        #log { width: 100%; max-width: 600px; background: white; border-radius: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: 250px; overflow-y: auto; box-sizing: border-box; }
+        #log { width: 100%; background: white; border-radius: 12px; padding: 10px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); max-height: 250px; overflow-y: auto; box-sizing: border-box; }
         .log-item { display: flex; justify-content: space-between; padding: 10px; border-bottom: 1px solid #eee; font-family: monospace; font-size: 13px; }
         .log-item:first-child { background: #f8f9fa; font-weight: bold; border-left: 4px solid var(--success); }
         .log-item.intercept-item { background: #fff3cd; border-left: 4px solid var(--warn); font-weight: bold; }
@@ -60,53 +64,75 @@
 </head>
 <body>
 
-<div class="card">
-    <h2>📚 圖書條碼多功能作業站</h2>
-    
-    <!-- 模式切換 -->
-    <div class="mode-selector">
-        <button id="modeReserveBtn" class="mode-btn active reserve-mode" onclick="switchMode('reserve')">⚠️ 預約書攔截模式</button>
-        <button id="modeProcureBtn" class="mode-btn procure-mode" onclick="switchMode('procure')">📦 採購書籍驗收模式</button>
+<!-- 鎖定狀態下的空白偽裝 -->
+<div id="lockScreen" style="margin-top: 100px; color: #95a5a6; font-size: 0.9rem;">系統維護中...</div>
+
+<!-- 主程式畫面 -->
+<div id="mainApp">
+    <div class="card">
+        <h2>📚 圖書條碼多功能作業站</h2>
+        
+        <!-- 模式切換 -->
+        <div class="mode-selector">
+            <button id="modeReserveBtn" class="mode-btn active reserve-mode" onclick="switchMode('reserve')">⚠️ 預約書攔截模式</button>
+            <button id="modeProcureBtn" class="mode-btn procure-mode" onclick="switchMode('procure')">📦 採購書籍驗收模式</button>
+        </div>
+        
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
+            <h3 id="listTitle">⚠️ 預約書條碼清單（一行一個）</h3>
+            <div>
+                <button id="lockBtn" class="btn-lock" onclick="toggleLock(true)">🔒 鎖定書單</button>
+                <button id="unlockBtn" class="btn-unlock" onclick="toggleLock(false)" style="display:none;">🔓 解除鎖定</button>
+            </div>
+        </div>
+        
+        <textarea id="reserveInput" placeholder="例如：&#10;NH0012345&#10;PNH12345" onchange="saveReserveList()"></textarea>
+        <div id="reserveCount" style="font-size: 0.85rem; color: #7f8c8d; margin-top: 5px;">目前載入資料：0 筆</div>
     </div>
-    
-    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-        <h3 id="listTitle">⚠️ 預約書條碼清單（一行一個）</h3>
-        <div>
-            <button id="lockBtn" class="btn-lock" onclick="toggleLock(true)">🔒 鎖定書單</button>
-            <button id="unlockBtn" class="btn-unlock" onclick="toggleLock(false)" style="display:none;">🔓 解除鎖定</button>
+
+    <div class="card">
+        <div id="stats">
+            <span>已掃描數量：<b id="count">0</b> 筆</span>
+            <span id="procureStats" style="display: none;">未到貨：<b id="undeliveredCount" style="color:var(--danger);">0</b> 筆</span>
+        </div>
+        
+        <input type="text" id="barcodeInput" placeholder="請掃描條碼..." autofocus>
+        <div id="status">準備就緒（請點擊畫面任意處啟用音效與語音功能）</div>
+
+        <div class="btn-group">
+            <button class="btn-download" onclick="exportFile('csv')">💾 下載 CSV 紀錄</button>
+            <button class="btn-download" style="background: #27ae60;" onclick="exportFile('txt')">📄 下載 TXT（純條碼）</button>
+            <button class="btn-clear" onclick="clearData()">🗑️ 清空歷史紀錄</button>
+        </div>
+
+        <!-- 採購模式專屬：未到貨清單展示 -->
+        <div id="undeliveredSection" class="undelivered-section">
+            <h4 style="margin: 5px 0; color: var(--danger); font-size: 0.9rem;">⏳ 尚未到貨清單</h4>
+            <div id="undeliveredList" class="undelivered-list"></div>
         </div>
     </div>
-    
-    <textarea id="reserveInput" placeholder="例如：&#10;NH0012345&#10;PNH12345" onchange="saveReserveList()"></textarea>
-    <div id="reserveCount" style="font-size: 0.85rem; color: #7f8c8d; margin-top: 5px;">目前載入資料：0 筆</div>
+
+    <h4 style="margin: 10px 0 5px 0; color: #7f8c8d;">近期掃描紀錄</h4>
+    <div id="log"></div>
 </div>
-
-<div class="card">
-    <div id="stats">
-        <span>已掃描數量：<b id="count">0</b> 筆</span>
-        <span id="procureStats" style="display: none;">未到貨：<b id="undeliveredCount" style="color:var(--danger);">0</b> 筆</span>
-    </div>
-    
-    <input type="text" id="barcodeInput" placeholder="請掃描條碼..." autofocus>
-    <div id="status">準備就緒（請先在網頁任意處點一下滑鼠以啟用音效與語音功能）</div>
-
-    <div class="btn-group">
-        <button class="btn-download" onclick="exportFile('csv')">💾 下載 CSV 紀錄</button>
-        <button class="btn-download" style="background: #27ae60;" onclick="exportFile('txt')">📄 下載 TXT（純條碼）</button>
-        <button class="btn-clear" onclick="clearData()">🗑️ 清空歷史紀錄</button>
-    </div>
-
-    <!-- 採購模式專屬：未到貨清單展示 -->
-    <div id="undeliveredSection" class="undelivered-section">
-        <h4 style="margin: 5px 0; color: var(--danger); font-size: 0.9rem;">⏳ 尚未到貨清單</h4>
-        <div id="undeliveredList" class="undelivered-list"></div>
-    </div>
-</div>
-
-<h4 style="margin: 10px 0 5px 0; color: #7f8c8d;">近期掃描紀錄</h4>
-<div id="log"></div>
 
 <script>
+    // 🔒 隱形斗篷安全檢查
+    // 💡 密碼可以在下面這行修改，目前預設為 'lbb1247'
+    const systemPassword = '1234'; 
+    
+    function checkAccess() {
+        const pass = prompt("請輸入系統驗收驗證碼：");
+        if (pass === systemPassword) {
+            document.getElementById('lockScreen').style.display = 'none';
+            document.getElementById('mainApp').style.display = 'block';
+            startApp();
+        } else {
+            alert("密碼錯誤，拒絕存取。");
+            document.getElementById('lockScreen').innerText = "未授權的連線。";
+        }
+    }
+
     const input = document.getElementById('barcodeInput');
     const status = document.getElementById('status');
     const logContainer = document.getElementById('log');
@@ -123,32 +149,20 @@
     const undeliveredListEl = document.getElementById('undeliveredList');
 
     // 狀態變數
-    let currentMode = localStorage.getItem('work_mode') || 'reserve'; // reserve 或 procure
-    let savedData = JSON.parse(localStorage.getItem('book_barcodes')) || [];
+    let currentMode = localStorage.getItem('work_mode') || 'reserve'; 
+    let savedData = [];
     
-    // 預約與採購清單數據結構
-    // reserveSet: 預約模式使用
     let reserveSet = new Set();
-    // procureMap: 採購模式使用，對應 { 條碼: 書名 }
     let procureMap = new Map();
 
-    // 載入預設輸入內容
-    reserveInput.value = localStorage.getItem('reserve_barcodes_raw') || '';
-    
     // 點擊網頁啟用聲音與語音
     document.addEventListener('click', (e) => {
         unlockAudioContext();
-        if (e.target === reserveInput && !reserveInput.disabled) return;
-        input.focus();
+        if (document.getElementById('mainApp').style.display === 'block') {
+            if (e.target === reserveInput && !reserveInput.disabled) return;
+            input.focus();
+        }
     });
-
-    // 初始化鎖定狀態
-    const isLocked = localStorage.getItem('reserve_is_locked') === 'true';
-    toggleLock(isLocked);
-    
-    // 初始化模式與解析
-    switchMode(currentMode, false);
-    renderLog();
 
     function unlockAudioContext() {
         try {
@@ -160,9 +174,7 @@
                 }
             }
             window.speechSynthesis.speak(new SpeechSynthesisUtterance(""));
-        } catch (e) {
-            console.log("語音通道激活失敗:", e);
-        }
+        } catch (e) {}
     }
 
     // 模式切換邏輯
@@ -211,7 +223,6 @@
         updateDataStructure();
     }
 
-    // 解析文字框輸入內容，支援預約模式（純條碼）與採購模式（條碼對應書名）
     function updateDataStructure() {
         const lines = reserveInput.value.split('\n');
         reserveSet.clear();
@@ -221,11 +232,8 @@
             const rawLine = line.trim();
             if (!rawLine) return;
 
-            // 支援多種分隔符號（Tab、逗號、分號、空格）
             const parts = rawLine.split(/[\t,;，；\s]+/);
             const barcode = parts[0].trim().toUpperCase();
-            
-            // 如果有第二個欄位，就是書名；沒有則預設為「未定義書名」
             const bookName = parts.slice(1).join(' ').trim() || "未命名圖書";
 
             if (barcode) {
@@ -242,11 +250,9 @@
         }
     }
 
-    // 更新未到貨清單
     function updateUndeliveredList() {
         if (currentMode !== 'procure') return;
 
-        // 找出哪些在 procureMap 但不在 savedData 中
         const scannedBarcodes = new Set(savedData.map(item => item.barcode));
         const undelivered = [];
 
@@ -290,7 +296,6 @@
         const isFormat2 = /^[A-Z]{3}\d{5}$/.test(code); 
 
         if (isFormat1 || isFormat2) {
-            // 檢查是否重複掃描
             if (savedData.some(item => item.barcode === code)) {
                 showStatus(`⚠️ 此條碼已掃描過: ${code}`, "invalid");
                 playAlertSound('duplicate');
@@ -298,7 +303,6 @@
             }
 
             if (currentMode === 'reserve') {
-                // =============== 預約攔截模式 ===============
                 const isReserved = reserveSet.has(code);
                 const newEntry = {
                     barcode: code,
@@ -317,7 +321,6 @@
                     playAlertSound('success');
                 }
             } else {
-                // =============== 採購驗收模式 ===============
                 const isInList = procureMap.has(code);
                 const bookName = isInList ? procureMap.get(code) : "不在到貨清單內";
                 
@@ -325,7 +328,7 @@
                     barcode: code,
                     bookName: bookName,
                     time: new Date().toLocaleString(),
-                    isReserved: false, // 採購模式下不使用此屬性
+                    isReserved: false, 
                     isInList: isInList,
                     mode: 'procure'
                 };
@@ -334,7 +337,6 @@
 
                 if (isInList) {
                     showStatus(`📦 到貨核對正確！\n書名：《${bookName}》`, "procure-valid");
-                    // 傳入書名讓語音唸出
                     playAlertSound('procure-success', bookName);
                 } else {
                     showStatus(`❌ 異常！此書不在到貨清單內: ${code}`, "invalid");
@@ -379,10 +381,8 @@
     }
 
     function playAlertSound(type, textExtra = "") {
-        // 先強制停止正在說話的語音，實現「刷下一本直接中斷」的效果
         window.speechSynthesis.cancel();
 
-        // 逼逼短音發聲（基礎 Web Audio API）
         const playBeep = (freq = 1000, duration = 0.08) => {
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -399,22 +399,19 @@
             }
         };
 
-        // 1. 一般掃描成功（預約模式下沒預約的書）
         if (type === 'success') {
             playBeep(1000, 0.08);
             return;
         }
 
-        // 2. 採購驗收成功：先發出清脆小短音，接著「馬上唸書名」
         if (type === 'procure-success') {
-            playBeep(1200, 0.05); // 稍微高音一點點的嗶聲，表示正確
+            playBeep(1200, 0.05); 
             setTimeout(() => {
                 speakText(textExtra);
             }, 80);
             return;
         }
 
-        // 其餘狀況（警報、重複、錯誤）皆以「人聲語音」來主導提示
         let speakWords = "";
         if (type === 'intercept') {
             speakWords = "攔截";
@@ -431,15 +428,13 @@
         speakText(speakWords);
     }
 
-    // 呼叫語音合成唸出文字
     function speakText(text) {
         const msg = new SpeechSynthesisUtterance(text);
         msg.lang = 'zh-TW';
-        msg.rate = 1.35; // 語速稍微加快，讓清點流暢
+        msg.rate = 1.35; 
         
         window.speechSynthesis.speak(msg);
         
-        // 針對 Chrome 語音有時會被自動暫停的 Bug 進行修復
         if (window.speechSynthesis.paused) {
             window.speechSynthesis.resume();
         }
@@ -490,6 +485,25 @@
             showStatus("已清空所有紀錄", "");
         }
     }
+
+    // 啟動主流程
+    function startApp() {
+        // 載入預設輸入內容
+        reserveInput.value = localStorage.getItem('reserve_barcodes_raw') || '';
+        
+        // 讀取快取模式與歷史紀錄
+        currentMode = localStorage.getItem('work_mode') || 'reserve'; 
+        savedData = JSON.parse(localStorage.getItem('book_barcodes')) || [];
+        
+        const isLocked = localStorage.getItem('reserve_is_locked') === 'true';
+        toggleLock(isLocked);
+        
+        switchMode(currentMode, false);
+        renderLog();
+    }
+
+    // 網頁開啟時，先執行安全檢查
+    window.onload = checkAccess;
 </script>
 
 </body>
