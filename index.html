@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>圖書條碼多功能作業站 Pro (精準解析版)</title>
+    <title>圖書條碼多功能作業站 Pro (終極完美版)</title>
     <style>
         :root { 
             --primary: #2c3e50; 
@@ -43,8 +43,14 @@
         button { flex: 1; padding: 12px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; color: white; font-size: 14px; }
         .btn-download { background: #2980b9; }
         .btn-clear { background: #95a5a6; }
-        .btn-lock { background: #34495e; padding: 6px 12px; font-size: 12px; flex: none; }
-        .btn-unlock { background: #7f8c8d; padding: 6px 12px; font-size: 12px; flex: none; }
+        
+        /* 鎖定、解鎖與清空欄位的小按鈕樣式 */
+        .header-controls { display: flex; gap: 6px; align-items: center; }
+        .btn-lock { background: #34495e; padding: 6px 10px; font-size: 12px; flex: none; }
+        .btn-unlock { background: #7f8c8d; padding: 6px 10px; font-size: 12px; flex: none; }
+        .btn-clear-text { background: #e67e22; padding: 6px 10px; font-size: 12px; flex: none; }
+        .btn-clear-text:disabled { background: #bdc3c7; cursor: not-allowed; opacity: 0.6; }
+        
         button:active { opacity: 0.8; }
         
         #stats { display: flex; justify-content: space-between; font-size: 0.95rem; color: #444; margin-bottom: 10px; background: #f8f9fa; padding: 8px; border-radius: 6px; }
@@ -74,8 +80,9 @@
         </div>
         
         <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
-            <h3 id="listTitle">⚠️ 預約書條碼清單（一行一個）</h3>
-            <div>
+            <h3 id="listTitle" style="margin: 0; font-size: 1.05rem;">⚠️ 預約書條碼清單（一行一個）</h3>
+            <div class="header-controls">
+                <button id="clearTextInputBtn" class="btn-clear-text" onclick="clearTextInput()">🗑️ 清空欄位</button>
                 <button id="lockBtn" class="btn-lock" onclick="toggleLock(true)">🔒 鎖定書單</button>
                 <button id="unlockBtn" class="btn-unlock" onclick="toggleLock(false)" style="display:none;">🔓 解除鎖定</button>
             </div>
@@ -112,7 +119,7 @@
 
 <script>
     // 🔒 隱形斗篷密碼鎖（可以在這行改密碼，引號請保留）
-    const systemPassword = '1234'; 
+    const systemPassword = '1247'; 
     
     function checkAccess() {
         const pass = prompt("請輸入系統驗收驗證碼：");
@@ -134,6 +141,7 @@
     const reserveCountEl = document.getElementById('reserveCount');
     const lockBtn = document.getElementById('lockBtn');
     const unlockBtn = document.getElementById('unlockBtn');
+    const clearTextInputBtn = document.getElementById('clearTextInputBtn');
     
     const listTitle = document.getElementById('listTitle');
     const procureStats = document.getElementById('procureStats');
@@ -151,6 +159,8 @@
         unlockAudioContext();
         if (document.getElementById('mainApp').style.display === 'block') {
             if (e.target === reserveInput && !reserveInput.disabled) return;
+            // 如果點擊的是清空按鈕或鎖定按鈕，不強制聚焦到掃描輸入框
+            if (e.target.tagName === 'BUTTON' || e.target.closest('.header-controls')) return;
             input.focus();
         }
     });
@@ -183,7 +193,7 @@
         } else {
             btnReserve.classList.remove('active');
             btnProcure.classList.add('active');
-            listTitle.innerText = "📦 採購應到貨清單（條碼 + Tab/逗號/空格 + 書名）";
+            listTitle.innerText = "📦 採購應到貨清單（條碼 + 書名）";
             reserveInput.placeholder = "可以直接從 Excel 複製貼上：\nNH0012345\t傲慢與偏見\nPNH12345,哈利波特";
             procureStats.style.display = 'inline';
             undeliveredSection.style.display = 'block';
@@ -195,6 +205,7 @@
 
     function toggleLock(shouldLock) {
         reserveInput.disabled = shouldLock;
+        clearTextInputBtn.disabled = shouldLock; // 鎖定時禁用清空按鈕，避免手滑
         localStorage.setItem('reserve_is_locked', shouldLock);
         if (shouldLock) {
             lockBtn.style.display = 'none';
@@ -206,12 +217,20 @@
         }
     }
 
+    // 🗑️ 一鍵清空輸入框功能
+    function clearTextInput() {
+        if (confirm("確定要清空上方輸入框的所有書單資料嗎？")) {
+            reserveInput.value = '';
+            saveReserveList();
+            reserveInput.focus();
+        }
+    }
+
     function saveReserveList() {
         localStorage.setItem('reserve_barcodes_raw', reserveInput.value);
         updateDataStructure();
     }
 
-    // 🔥 升級版精準解析：自動偵測並拆分條碼與書名，徹底保留重複書名
     function updateDataStructure() {
         const lines = reserveInput.value.split('\n');
         reserveSet.clear();
@@ -221,20 +240,17 @@
             const rawLine = line.trim();
             if (!rawLine) return;
 
-            // 尋找條碼 (NH 開頭或 PNH 開頭，不限大小寫)
             const barcodeRegex = /\b(NH\d+|PNH\d+)\b/i;
             const match = rawLine.match(barcodeRegex);
 
             if (match) {
                 const barcode = match[1].toUpperCase();
-                // 把條碼從該行文字中拔掉，剩下的部分就是書名（自動清理多餘空白、Tab、逗號、分號）
                 let bookName = rawLine.replace(match[0], '').replace(/^[\t,;，；\s]+|[\t,;，；\s]+$/g, '').trim();
                 bookName = bookName || "未命名圖書";
 
                 reserveSet.add(barcode);
                 procureMap.set(barcode, bookName);
             } else {
-                // 如果沒有偵測到 NH/PNH 格式，則退回預設的第一欄為條碼
                 const parts = rawLine.split(/[\t,;，；]+/);
                 const barcode = parts[0].trim().toUpperCase();
                 const bookName = parts.slice(1).join(' ').trim() || "未命名圖書";
