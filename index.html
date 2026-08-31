@@ -65,16 +65,16 @@
     
     <!-- 模式切換 -->
     <div class="mode-selector">
-        <button id="modeReserveBtn" class="mode-btn active reserve-mode" onclick="switchMode('reserve')">⚠️ 預約書攔截模式</button>
-        <button id="modeProcureBtn" class="mode-btn procure-mode" onclick="switchMode('procure')">📦 採購書籍驗收模式</button>
+        <button id="modeReserveBtn" class="mode-btn active reserve-mode" onclick="switchMode('reserve', false, event)">⚠️ 預約書攔截模式</button>
+        <button id="modeProcureBtn" class="mode-btn procure-mode" onclick="switchMode('procure', false, event)">📦 採購書籍驗收模式</button>
     </div>
     
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
         <h3 id="listTitle">⚠️ 預約書條碼清單（一行一個）</h3>
         <div style="display: flex; gap: 5px;">
-            <button id="clearListBtn" class="btn-clear" style="padding: 6px 12px; font-size: 12px; flex: none; background: #e74c3c;" onclick="clearMasterList()">🗑️ 清空清單</button>
-            <button id="lockBtn" class="btn-lock" onclick="toggleLock(true)">🔒 鎖定書單</button>
-            <button id="unlockBtn" class="btn-unlock" onclick="toggleLock(false)" style="display:none;">🔓 解除鎖定</button>
+            <button id="clearListBtn" class="btn-clear" style="padding: 6px 12px; font-size: 12px; flex: none; background: #e74c3c;" onclick="clearMasterList(event)">🗑️ 清空清單</button>
+            <button id="lockBtn" class="btn-lock" onclick="toggleLock(true, event)">🔒 鎖定書單</button>
+            <button id="unlockBtn" class="btn-unlock" onclick="toggleLock(false, event)" style="display:none;">🔓 解除鎖定</button>
         </div>
     </div>
     
@@ -89,12 +89,12 @@
     </div>
     
     <input type="text" id="barcodeInput" placeholder="請掃描條碼..." autofocus>
-    <div id="status">準備就緒（請先在網頁任意處點一下滑鼠以啟用音效與語音功能）</div>
+    <div id="status">準備就緒（請先在網頁任意處點一下以啟用音效與語音功能）</div>
 
     <div class="btn-group">
-        <button class="btn-download" onclick="exportFile('csv')">💾 下載 CSV 紀錄</button>
-        <button class="btn-download" style="background: #27ae60;" onclick="exportFile('txt')">📄 下載 TXT（純條碼）</button>
-        <button class="btn-clear" onclick="clearData()">🗑️ 清空歷史紀錄</button>
+        <button class="btn-download" onclick="exportFile('csv', event)">💾 下載 CSV 紀錄</button>
+        <button class="btn-download" style="background: #27ae60;" onclick="exportFile('txt', event)">📄 下載 TXT（純條碼）</button>
+        <button class="btn-clear" onclick="clearData(event)">🗑️ 清空歷史紀錄</button>
     </div>
 
     <!-- 採購模式專屬：未到貨清單展示 -->
@@ -124,7 +124,7 @@
     const undeliveredListEl = document.getElementById('undeliveredList');
 
     // 狀態變數
-    let currentMode = localStorage.getItem('work_mode') || 'reserve'; // reserve 或 procure
+    let currentMode = localStorage.getItem('work_mode') || 'reserve';
     let savedData = JSON.parse(localStorage.getItem('book_barcodes')) || [];
     
     // 預約與採購清單數據結構
@@ -134,10 +134,12 @@
     // 載入預設輸入內容
     reserveInput.value = localStorage.getItem('reserve_barcodes_raw') || '';
     
-    // 點擊網頁啟用聲音與語音
+    // 點擊網頁啟用聲音與語音（排除按鈕、輸入框，避免手機觸控焦點亂跳）
     document.addEventListener('click', (e) => {
         unlockAudioContext();
-        if (e.target === reserveInput && !reserveInput.disabled) return;
+        if (e.target.closest('button') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+            return;
+        }
         input.focus();
     });
 
@@ -165,7 +167,8 @@
     }
 
     // 模式切換邏輯
-    function switchMode(mode, shouldFocus = true) {
+    function switchMode(mode, shouldFocus = false, event = null) {
+        if (event) event.stopPropagation();
         currentMode = mode;
         localStorage.setItem('work_mode', mode);
 
@@ -192,13 +195,13 @@
         if (shouldFocus) input.focus();
     }
 
-    function toggleLock(shouldLock) {
+    function toggleLock(shouldLock, event = null) {
+        if (event) event.stopPropagation();
         reserveInput.disabled = shouldLock;
         localStorage.setItem('reserve_is_locked', shouldLock);
         if (shouldLock) {
             lockBtn.style.display = 'none';
             unlockBtn.style.display = 'inline-block';
-            input.focus();
         } else {
             lockBtn.style.display = 'inline-block';
             unlockBtn.style.display = 'none';
@@ -211,7 +214,8 @@
     }
 
     // 清空母樣本清單
-    function clearMasterList() {
+    function clearMasterList(event = null) {
+        if (event) event.stopPropagation();
         if (reserveInput.disabled) {
             alert("⚠️ 目前清單處於「鎖定」狀態，請先點擊「🔓 解除鎖定」再進行清空！");
             return;
@@ -220,7 +224,6 @@
             reserveInput.value = '';
             saveReserveList();
             showStatus("已清空母樣本清單", "");
-            input.focus();
         }
     }
 
@@ -443,7 +446,8 @@
         }
     }
 
-    function exportFile(format) {
+    function exportFile(format, event = null) {
+        if (event) event.stopPropagation();
         if (savedData.length === 0) {
             alert("目前沒有資料可匯出！");
             return;
@@ -479,7 +483,8 @@
         document.body.removeChild(link);
     }
 
-    function clearData() {
+    function clearData(event = null) {
+        if (event) event.stopPropagation();
         if (confirm("確定要清空所有已掃描的資料嗎？(此動作無法復原，但上方的對照清單會保留)")) {
             savedData = [];
             localStorage.removeItem('book_barcodes');
