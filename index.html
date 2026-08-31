@@ -56,6 +56,33 @@
         .undelivered-section { display: none; margin-top: 15px; }
         .undelivered-list { max-height: 150px; overflow-y: auto; border: 1px solid #e0e0e0; border-radius: 6px; padding: 8px; font-size: 12px; background: #fafafa; font-family: monospace; }
         .undelivered-item { padding: 4px 0; border-bottom: 1px dashed #eee; color: #c0392b; display: flex; justify-content: space-between; }
+
+        /* 自製手機相容對話框 */
+        .modal-overlay {
+            display: none;
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0,0,0,0.5);
+            z-index: 9999;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+        .modal-box {
+            background: white;
+            border-radius: 12px;
+            max-width: 380px;
+            width: 100%;
+            padding: 20px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.2);
+            text-align: center;
+        }
+        .modal-box h4 { margin-top: 0; margin-bottom: 10px; font-size: 1.15rem; color: #333; }
+        .modal-box p { color: #666; font-size: 0.95rem; margin-bottom: 20px; line-height: 1.5; }
+        .modal-actions { display: flex; gap: 10px; }
+        .modal-btn-cancel { background: #bdc3c7; color: #2c3e50; }
+        .modal-btn-confirm { background: var(--danger); }
     </style>
 </head>
 <body>
@@ -107,6 +134,18 @@
 <h4 style="margin: 10px 0 5px 0; color: #7f8c8d;">近期掃描紀錄</h4>
 <div id="log"></div>
 
+<!-- 自訂確認視窗 -->
+<div id="customModal" class="modal-overlay">
+    <div class="modal-box">
+        <h4 id="modalTitle">確認操作</h4>
+        <p id="modalMessage">確定要執行此操作嗎？</p>
+        <div class="modal-actions">
+            <button id="modalCancelBtn" class="modal-btn-cancel">取消</button>
+            <button id="modalConfirmBtn" class="modal-btn-confirm">確定清空</button>
+        </div>
+    </div>
+</div>
+
 <script>
     const input = document.getElementById('barcodeInput');
     const status = document.getElementById('status');
@@ -123,31 +162,35 @@
     const undeliveredSection = document.getElementById('undeliveredSection');
     const undeliveredListEl = document.getElementById('undeliveredList');
 
+    // 彈窗元素
+    const customModal = document.getElementById('customModal');
+    const modalTitle = document.getElementById('modalTitle');
+    const modalMessage = document.getElementById('modalMessage');
+    const modalConfirmBtn = document.getElementById('modalConfirmBtn');
+    const modalCancelBtn = document.getElementById('modalCancelBtn');
+    let onModalConfirmCallback = null;
+
     // 狀態變數
     let currentMode = localStorage.getItem('work_mode') || 'reserve';
     let savedData = JSON.parse(localStorage.getItem('book_barcodes')) || [];
     
-    // 預約與採購清單數據結構
     let reserveSet = new Set();
     let procureMap = new Map();
 
-    // 載入預設輸入內容
     reserveInput.value = localStorage.getItem('reserve_barcodes_raw') || '';
     
-    // 點擊網頁啟用聲音與語音（排除按鈕、輸入框，避免手機觸控焦點亂跳）
+    // 點擊網頁啟用聲音與語音（排除所有互動元素與彈窗）
     document.addEventListener('click', (e) => {
         unlockAudioContext();
-        if (e.target.closest('button') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
+        if (e.target.closest('button') || e.target.closest('.modal-box') || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT') {
             return;
         }
         input.focus();
     });
 
-    // 初始化鎖定狀態
     const isLocked = localStorage.getItem('reserve_is_locked') === 'true';
     toggleLock(isLocked);
     
-    // 初始化模式與解析
     switchMode(currentMode, false);
     renderLog();
 
@@ -166,7 +209,27 @@
         }
     }
 
-    // 模式切換邏輯
+    // 自訂對話框函式（手機百分之百相容）
+    function openConfirmModal(title, msg, onConfirm) {
+        modalTitle.innerText = title;
+        modalMessage.innerText = msg;
+        onModalConfirmCallback = onConfirm;
+        customModal.style.display = 'flex';
+    }
+
+    modalCancelBtn.onclick = function() {
+        customModal.style.display = 'none';
+        onModalConfirmCallback = null;
+    };
+
+    modalConfirmBtn.onclick = function() {
+        if (onModalConfirmCallback) {
+            onModalConfirmCallback();
+        }
+        customModal.style.display = 'none';
+        onModalConfirmCallback = null;
+    };
+
     function switchMode(mode, shouldFocus = false, event = null) {
         if (event) event.stopPropagation();
         currentMode = mode;
@@ -217,17 +280,17 @@
     function clearMasterList(event = null) {
         if (event) event.stopPropagation();
         if (reserveInput.disabled) {
-            alert("⚠️ 目前清單處於「鎖定」狀態，請先點擊「🔓 解除鎖定」再進行清空！");
+            showStatus("⚠️ 請先點擊「🔓 解除鎖定」再進行清空！", "invalid");
             return;
         }
-        if (confirm("確定要清空上方的母樣本比對清單嗎？")) {
+
+        openConfirmModal("清空比對清單", "確定要清空上方的母樣本比對清單嗎？（下方已掃描紀錄會保留）", () => {
             reserveInput.value = '';
             saveReserveList();
-            showStatus("已清空母樣本清單", "");
-        }
+            showStatus("已清空母樣本清單", "valid");
+        });
     }
 
-    // 解析文字框輸入內容
     function updateDataStructure() {
         const lines = reserveInput.value.split('\n');
         reserveSet.clear();
@@ -255,7 +318,6 @@
         }
     }
 
-    // 更新未到貨清單
     function updateUndeliveredList() {
         if (currentMode !== 'procure') return;
 
@@ -449,7 +511,7 @@
     function exportFile(format, event = null) {
         if (event) event.stopPropagation();
         if (savedData.length === 0) {
-            alert("目前沒有資料可匯出！");
+            showStatus("⚠️ 目前沒有資料可匯出！", "invalid");
             return;
         }
         let fileContent = "";
@@ -485,13 +547,13 @@
 
     function clearData(event = null) {
         if (event) event.stopPropagation();
-        if (confirm("確定要清空所有已掃描的資料嗎？(此動作無法復原，但上方的對照清單會保留)")) {
+        openConfirmModal("清空歷史紀錄", "確定要清空所有已掃描的資料嗎？(此動作無法復原，上方的對照清單會保留)", () => {
             savedData = [];
             localStorage.removeItem('book_barcodes');
             renderLog();
             if (currentMode === 'procure') updateUndeliveredList();
-            showStatus("已清空所有紀錄", "");
-        }
+            showStatus("已清空所有掃描紀錄", "");
+        });
     }
 </script>
 
