@@ -71,7 +71,8 @@
     
     <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;">
         <h3 id="listTitle">⚠️ 預約書條碼清單（一行一個）</h3>
-        <div>
+        <div style="display: flex; gap: 5px;">
+            <button id="clearListBtn" class="btn-clear" style="padding: 6px 12px; font-size: 12px; flex: none; background: #e74c3c;" onclick="clearMasterList()">🗑️ 清空清單</button>
             <button id="lockBtn" class="btn-lock" onclick="toggleLock(true)">🔒 鎖定書單</button>
             <button id="unlockBtn" class="btn-unlock" onclick="toggleLock(false)" style="display:none;">🔓 解除鎖定</button>
         </div>
@@ -127,9 +128,7 @@
     let savedData = JSON.parse(localStorage.getItem('book_barcodes')) || [];
     
     // 預約與採購清單數據結構
-    // reserveSet: 預約模式使用
     let reserveSet = new Set();
-    // procureMap: 採購模式使用，對應 { 條碼: 書名 }
     let procureMap = new Map();
 
     // 載入預設輸入內容
@@ -211,7 +210,21 @@
         updateDataStructure();
     }
 
-    // 解析文字框輸入內容，支援預約模式（純條碼）與採購模式（條碼對應書名）
+    // 清空母樣本清單
+    function clearMasterList() {
+        if (reserveInput.disabled) {
+            alert("⚠️ 目前清單處於「鎖定」狀態，請先點擊「🔓 解除鎖定」再進行清空！");
+            return;
+        }
+        if (confirm("確定要清空上方的母樣本比對清單嗎？")) {
+            reserveInput.value = '';
+            saveReserveList();
+            showStatus("已清空母樣本清單", "");
+            input.focus();
+        }
+    }
+
+    // 解析文字框輸入內容
     function updateDataStructure() {
         const lines = reserveInput.value.split('\n');
         reserveSet.clear();
@@ -221,11 +234,8 @@
             const rawLine = line.trim();
             if (!rawLine) return;
 
-            // 支援多種分隔符號（Tab、逗號、分號、空格）
             const parts = rawLine.split(/[\t,;，；\s]+/);
             const barcode = parts[0].trim().toUpperCase();
-            
-            // 如果有第二個欄位，就是書名；沒有則預設為「未定義書名」
             const bookName = parts.slice(1).join(' ').trim() || "未命名圖書";
 
             if (barcode) {
@@ -246,7 +256,6 @@
     function updateUndeliveredList() {
         if (currentMode !== 'procure') return;
 
-        // 找出哪些在 procureMap 但不在 savedData 中
         const scannedBarcodes = new Set(savedData.map(item => item.barcode));
         const undelivered = [];
 
@@ -290,7 +299,6 @@
         const isFormat2 = /^[A-Z]{3}\d{5}$/.test(code); 
 
         if (isFormat1 || isFormat2) {
-            // 檢查是否重複掃描
             if (savedData.some(item => item.barcode === code)) {
                 showStatus(`⚠️ 此條碼已掃描過: ${code}`, "invalid");
                 playAlertSound('duplicate');
@@ -298,7 +306,6 @@
             }
 
             if (currentMode === 'reserve') {
-                // =============== 預約攔截模式 ===============
                 const isReserved = reserveSet.has(code);
                 const newEntry = {
                     barcode: code,
@@ -317,7 +324,6 @@
                     playAlertSound('success');
                 }
             } else {
-                // =============== 採購驗收模式 ===============
                 const isInList = procureMap.has(code);
                 const bookName = isInList ? procureMap.get(code) : "不在到貨清單內";
                 
@@ -325,7 +331,7 @@
                     barcode: code,
                     bookName: bookName,
                     time: new Date().toLocaleString(),
-                    isReserved: false, // 採購模式下不使用此屬性
+                    isReserved: false,
                     isInList: isInList,
                     mode: 'procure'
                 };
@@ -334,7 +340,6 @@
 
                 if (isInList) {
                     showStatus(`📦 到貨核對正確！\n書名：《${bookName}》`, "procure-valid");
-                    // 傳入書名讓語音唸出
                     playAlertSound('procure-success', bookName);
                 } else {
                     showStatus(`❌ 異常！此書不在到貨清單內: ${code}`, "invalid");
@@ -379,10 +384,8 @@
     }
 
     function playAlertSound(type, textExtra = "") {
-        // 先強制停止正在說話的語音，實現「刷下一本直接中斷」的效果
         window.speechSynthesis.cancel();
 
-        // 逼逼短音發聲（基礎 Web Audio API）
         const playBeep = (freq = 1000, duration = 0.08) => {
             try {
                 const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
@@ -399,22 +402,19 @@
             }
         };
 
-        // 1. 一般掃描成功（預約模式下沒預約的書）
         if (type === 'success') {
             playBeep(1000, 0.08);
             return;
         }
 
-        // 2. 採購驗收成功：先發出清脆小短音，接著「馬上唸書名」
         if (type === 'procure-success') {
-            playBeep(1200, 0.05); // 稍微高音一點點的嗶聲，表示正確
+            playBeep(1200, 0.05);
             setTimeout(() => {
                 speakText(textExtra);
             }, 80);
             return;
         }
 
-        // 其餘狀況（警報、重複、錯誤）皆以「人聲語音」來主導提示
         let speakWords = "";
         if (type === 'intercept') {
             speakWords = "預約";
@@ -431,15 +431,13 @@
         speakText(speakWords);
     }
 
-    // 呼叫語音合成唸出文字
     function speakText(text) {
         const msg = new SpeechSynthesisUtterance(text);
         msg.lang = 'zh-TW';
-        msg.rate = 1.35; // 語速稍微加快，讓清點流暢
+        msg.rate = 1.35;
         
         window.speechSynthesis.speak(msg);
         
-        // 針對 Chrome 語音有時會被自動暫停的 Bug 進行修復
         if (window.speechSynthesis.paused) {
             window.speechSynthesis.resume();
         }
